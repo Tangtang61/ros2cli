@@ -38,9 +38,8 @@ class DoctorCommand(CommandExtension):
             help='Include warnings as failed checks. Warnings are ignored by default.'
         )
 
-        verb_extensions = get_verb_extensions('ros2doctor.verb')
         add_subparsers_on_demand(
-            parser, cli_name, '_verb', verb_extensions, required=False)
+            parser, cli_name, '_verb', 'ros2doctor.verb', required=False)
 
     def main(self, *, parser, args):
         """Run checks and print report to terminal based on user input args."""
