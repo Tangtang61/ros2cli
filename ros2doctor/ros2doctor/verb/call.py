@@ -26,35 +26,59 @@ from std_msgs.msg import String
 
 DEFAULT_GROUP = '225.0.0.1'
 DEFAULT_PORT = 49150
-DEFAULT_TOPIC = '/knockknock'
-summary_table = {}
+summary_table = {}  # need to be put into a thread safe object
 
 
 class CallVerb(VerbExtension):
-    """Publish and subscribe, multicast send and receive, print table."""
+    """
+    Check network connectivity between multiple hosts.
+
+    This command can be invoked on multiple hosts to confirm that they can talk to each other.
+
+    TODO <describe how pub/sub is used to test ROS comms>
+    TODO <describe how multicast send/receive is used to confirm multicast UDP comms>
+    """
+
+    def add_arguments(self, parser, cli_name):
+        arg = parser.add_argument(
+            'topic_name', default='/canyouhearme',
+            help="Name of ROS topic to publish to (e.g. '/canyouhearme')")
+        arg = parser.add_argument(
+            'time_period', default=0.1,
+            help='time period to publish one message')
+        arg = parser.add_argument(
+            'qos', default=10,
+            help="quality of service profile to publish message")
+        parser.add_argument(
+            '-r', '--rate', metavar='N', type=float, default=1.0,
+            help='Emitting rate in Hz (default: 1.0)')
+        parser.add_argument(
+            '-1', '--once', action='store_true',
+            help='Emit one message and exit')
+
 
     def main(self, *, args):
         rclpy.init()
-        pub_node = Talker()
-        sub_node = Listener()
+        pub_node = Talker(args.topic_name, args.time_period, args.qos)
+        sub_node = Listener(args.topic_name, args.qos)
 
         executor = MultiThreadedExecutor()
         executor.add_node(pub_node)
         executor.add_node(sub_node)
         try:
             count = 0
-            _spawn_summary_table()
+            _zero_init_summary_table()
             while True:
                 if (count % 20 == 0 and count != 0):
-                    format_print(summary_table)
-                    _spawn_summary_table()
+                    _format_print_summary(summary_table, args.topic_name)
+                    _zero_init_summary_table()
                 # pub/sub threads
                 executor.spin_once()
                 executor.spin_once()
                 # multicast threads
-                send_thread = threading.Thread(target=send, args=())
+                send_thread = threading.Thread(target=_send, args=())
                 send_thread.daemon = True
-                receive_thread = threading.Thread(target=receive, args=())
+                receive_thread = threading.Thread(target=_receive, args=())
                 receive_thread.daemon = True
                 receive_thread.start()
                 send_thread.start()
@@ -69,18 +93,17 @@ class CallVerb(VerbExtension):
 class Talker(Node):
     """Initialize talker node."""
 
-    def __init__(self):
-        super().__init__('talker')
+    def __init__(self, topic, period, qos):
+        super().__init__('ros2doctor_talker')
         self.i = 0
-        self.pub = self.create_publisher(String, DEFAULT_TOPIC, 10)
-        time_period = 0.1
-        self.timer = self.create_timer(time_period, self.timer_callback)
+        self.pub = self.create_publisher(String, topic, qos)
+        self.timer = self.create_timer(period, self.timer_callback)
 
     def timer_callback(self):
         msg = String()
         hostname = socket.gethostname()
         # publish
-        msg.data = f'Publish hello from {hostname}'
+        msg.data = f"hello, it's me {hostname}"
         summary_table['pub'] += 1
         self.pub.publish(msg)
         self.i += 1
@@ -89,12 +112,13 @@ class Talker(Node):
 class Listener(Node):
     """Initialize listener node."""
 
-    def __init__(self):
-        super().__init__('listener')
-        self.sub = self.create_subscription(String,
-                                            DEFAULT_TOPIC,
-                                            self.sub_callback,
-                                            10)
+    def __init__(self, topic, qos):
+        super().__init__('ros2doctor_listener')
+        self.sub = self.create_subscription(
+            String,
+            topic,
+            self.sub_callback,
+            qos)
 
     def sub_callback(self, msg):
         # subscribe
@@ -107,18 +131,21 @@ class Listener(Node):
                 summary_table['sub'][caller_hostname] += 1
 
 
-def send():
+def _send(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, ttl=None):
     """Multicast send."""
     hostname = socket.gethostname()
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    if ttl is not None:
+        packed_ttl = struct.pack('b', ttl)
+        s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, packed_ttl)
     try:
         summary_table['send'] += 1
-        s.sendto(f'Multicast hello from {hostname}'.encode('utf-8'), (DEFAULT_GROUP, DEFAULT_PORT))
+        s.sendto(f"hello, it's me {hostname}".encode('utf-8'), (group, port))
     finally:
         s.close()
 
 
-def receive():
+def _receive(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, timeout=None):
     """Multicast receive."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     try:
@@ -128,11 +155,11 @@ def receive():
         except AttributeError:
             # not available on Windows
             pass
-        s.bind(('', DEFAULT_PORT))
+        s.bind(('', port))
 
-        s.settimeout(None)
+        s.settimeout(timeout)
 
-        mreq = struct.pack('4sl', socket.inet_aton(DEFAULT_GROUP), socket.INADDR_ANY)
+        mreq = struct.pack('4sl', socket.inet_aton(group), socket.INADDR_ANY)
         s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         try:
             data, _ = s.recvfrom(4096)
@@ -149,7 +176,7 @@ def receive():
         s.close()
 
 
-def _spawn_summary_table():
+def _zero_init_summary_table():
     """Spawn summary table with new content after each print."""
     summary_table['pub'] = 0
     summary_table['sub'] = {}
@@ -157,22 +184,22 @@ def _spawn_summary_table():
     summary_table['receive'] = {}
 
 
-def _format_print_helper(table):
+def _format_print_summary_helper(table):
     """Format summary table."""
     print('{:<15} {:<20} {:<10}'.format('', 'Hostname', 'Msg Count /2s'))
     for name, count in table.items():
         print('{:<15} {:<20} {:<10}'.format('', name, count))
 
 
-def format_print(summary_table):
+def _format_print_summary(table, topic):
     """Print content in summary table."""
-    pub_count = summary_table['pub']
-    send_count = summary_table['send']
+    pub_count = table['pub']
+    send_count = table['send']
     print('MULTIMACHINE COMMUNICATION SUMMARY')
-    print(f'Topic: {DEFAULT_TOPIC}, Published Msg Count: {pub_count}')
+    print(f'Topic: {topic}, Published Msg Count: {pub_count}')
     print('Subscribed from:')
-    _format_print_helper(summary_table['sub'])
+    _format_print_summary_helper(table['sub'])
     print(f'Multicast Group/Port: {DEFAULT_GROUP}/{DEFAULT_PORT}, Sent Msg Count: {send_count}')
     print('Received from:')
-    _format_print_helper(summary_table['receive'])
+    _format_print_summary_helper(table['receive'])
     print('-'*60)
