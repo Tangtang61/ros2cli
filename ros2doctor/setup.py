@@ -52,7 +52,8 @@ setup(
             'PackageReport = ros2doctor.api.package:PackageReport',
         ],
         'ros2doctor.verb': [
-            'call = ros2doctor.verb.call:CallVerb',
+            'emit = ros2doctor.verb.emit:EmitVerb',
+            'discover = ros2doctor.verb.discover:DiscoverVerb',
         ]
     }
 )
