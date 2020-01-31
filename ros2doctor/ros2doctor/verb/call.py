@@ -44,7 +44,8 @@ class CallVerb(VerbExtension):
     Check network connectivity between multiple hosts.
 
     This command can be invoked on multiple hosts to confirm that they can talk to each other
-    by using talker/listener, multicast send/receive to check topic discovering and UDP communication.
+    by using talker/listener, multicast send/receive to check topic discovering and
+    UDP communication.
     This command outputs a summary table of msgs statistics at a custom rate(Hz).
     """
 
@@ -65,7 +66,6 @@ class CallVerb(VerbExtension):
             '--ttl', type=positive_int,
             help='TTL for multicast send')
 
-
     def main(self, *, args):
         global summary_table
         summary_table = SummaryTable()
@@ -74,7 +74,7 @@ class CallVerb(VerbExtension):
         pub_node = Talker(args.topic_name, args.time_period)
         sub_node = Listener(args.topic_name)
         executor.add_node(pub_node)
-        executor.add_node(sub_node)    
+        executor.add_node(sub_node)
         try:
             prev_time = time.time()
             timeout = time.time() + args.duration
@@ -87,7 +87,7 @@ class CallVerb(VerbExtension):
                 executor.spin_once()
                 executor.spin_once()
                 # multicast threads
-                send_thread = threading.Thread(target=_send, kwargs={'ttl':args.ttl})
+                send_thread = threading.Thread(target=_send, kwargs={'ttl': args.ttl})
                 send_thread.daemon = True
                 receive_thread = threading.Thread(target=_receive)
                 receive_thread.daemon = True
@@ -189,7 +189,7 @@ class SummaryTable():
         self.sub = {}
         self.send = 0
         self.receive = {}
-    
+
     def reset(self):
         self.pub = 0
         self.send = 0
