@@ -14,6 +14,7 @@
 
 from ros2cli.command import add_subparsers_on_demand
 from ros2cli.command import CommandExtension
+from ros2cli.verb import get_verb_extensions
 from ros2doctor.api import generate_reports
 from ros2doctor.api import run_checks
 from ros2doctor.api.format import format_print
