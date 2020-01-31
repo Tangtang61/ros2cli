@@ -43,9 +43,10 @@ class CallVerb(VerbExtension):
     """
     Check network connectivity between multiple hosts.
 
-    This command can be invoked on multiple hosts to confirm that they can talk to each other
-    by using talker/listener, multicast send/receive to check topic discovering and UDP communication.
-    This command outputs a summary table of msgs statistics at a custom rate(Hz).
+    This command can be invoked on multiple hosts to confirm that they can talk to each other.
+
+    TODO <describe how pub/sub is used to test ROS comms>
+    TODO <describe how multicast send/receive is used to confirm multicast UDP comms>
     """
 
     def add_arguments(self, parser, cli_name):
