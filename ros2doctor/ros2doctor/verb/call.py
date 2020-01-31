@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from argparse import ArgumentTypeError
 import socket
 import struct
 import threading
@@ -26,7 +27,16 @@ from std_msgs.msg import String
 
 DEFAULT_GROUP = '225.0.0.1'
 DEFAULT_PORT = 49150
-summary_table = {}  # need to be put into a thread safe object
+
+
+def positive_int(string):
+    try:
+        value = int(string)
+    except ValueError:
+        value = -1
+    if value <= 0:
+        raise ArgumentTypeError('value must be a positive integer')
+    return value
 
 
 class CallVerb(VerbExtension):
@@ -51,13 +61,17 @@ class CallVerb(VerbExtension):
             help="quality of service profile to publish message")
         parser.add_argument(
             '-r', '--rate', metavar='N', type=float, default=1.0,
-            help='Emitting rate in Hz (default: 1.0)')
+            help='Rate in Hz to print summary table (default: 1.0)')
+        parser.add_argument(
+            '--ttl', type=positive_int,
+            help='TTL for multicast send')
         parser.add_argument(
             '-1', '--once', action='store_true',
-            help='Emit one message and exit')
+            help='Emit one round of messages and exit')
 
 
     def main(self, *, args):
+        global summary_table
         rclpy.init()
         pub_node = Talker(args.topic_name, args.time_period, args.qos)
         sub_node = Listener(args.topic_name, args.qos)
@@ -65,18 +79,18 @@ class CallVerb(VerbExtension):
         executor = MultiThreadedExecutor()
         executor.add_node(pub_node)
         executor.add_node(sub_node)
+        summary_table = SummaryTable()
         try:
             count = 0
-            _zero_init_summary_table()
             while True:
                 if (count % 20 == 0 and count != 0):
-                    _format_print_summary(summary_table, args.topic_name)
-                    _zero_init_summary_table()
+                    summary_table.format_print_summary(args.topic_name)
+                    summary_table = SummaryTable()
                 # pub/sub threads
                 executor.spin_once()
                 executor.spin_once()
                 # multicast threads
-                send_thread = threading.Thread(target=_send, args=())
+                send_thread = threading.Thread(target=_send, kwargs={'ttl':args.ttl})
                 send_thread.daemon = True
                 receive_thread = threading.Thread(target=_receive, args=())
                 receive_thread.daemon = True
@@ -104,7 +118,7 @@ class Talker(Node):
         hostname = socket.gethostname()
         # publish
         msg.data = f"hello, it's me {hostname}"
-        summary_table['pub'] += 1
+        summary_table.increment_pub()
         self.pub.publish(msg)
         self.i += 1
 
@@ -123,12 +137,9 @@ class Listener(Node):
     def sub_callback(self, msg):
         # subscribe
         msg_data = msg.data.split()
-        caller_hostname = msg_data[-1]
-        if caller_hostname != socket.gethostname():
-            if caller_hostname not in summary_table['sub']:
-                summary_table['sub'][caller_hostname] = 1
-            else:
-                summary_table['sub'][caller_hostname] += 1
+        pub_hostname = msg_data[-1]
+        if pub_hostname != socket.gethostname():
+            summary_table.increment_sub(pub_hostname)
 
 
 def _send(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, ttl=None):
@@ -139,7 +150,7 @@ def _send(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, ttl=None):
         packed_ttl = struct.pack('b', ttl)
         s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, packed_ttl)
     try:
-        summary_table['send'] += 1
+        summary_table.increment_send()
         s.sendto(f"hello, it's me {hostname}".encode('utf-8'), (group, port))
     finally:
         s.close()
@@ -166,40 +177,77 @@ def _receive(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, timeout=None):
             data = data.decode('utf-8')
             sender_hostname = data.split()[-1]
             if sender_hostname != socket.gethostname():
-                if sender_hostname not in summary_table['receive']:
-                    summary_table['receive'][sender_hostname] = 1
-                else:
-                    summary_table['receive'][sender_hostname] += 1
+                summary_table.increment_receive(sender_hostname)
         finally:
             s.setsockopt(socket.IPPROTO_IP, socket.IP_DROP_MEMBERSHIP, mreq)
     finally:
         s.close()
 
 
-def _zero_init_summary_table():
-    """Spawn summary table with new content after each print."""
-    summary_table['pub'] = 0
-    summary_table['sub'] = {}
-    summary_table['send'] = 0
-    summary_table['receive'] = {}
+class SummaryTable():
 
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.pub = 0
+        self.sub = {}
+        self.send = 0
+        self.receive = {}
+    
+    def reset_table(self):
+        self.pub = 0
+        self.send = 0
+        self.sub = {}
+        self.receive = {}
 
-def _format_print_summary_helper(table):
-    """Format summary table."""
-    print('{:<15} {:<20} {:<10}'.format('', 'Hostname', 'Msg Count /2s'))
-    for name, count in table.items():
-        print('{:<15} {:<20} {:<10}'.format('', name, count))
+    def increment_pub(self):
+        self.lock.acquire()
+        try:
+            self.pub += 1
+        finally:
+            self.lock.release()
 
+    def increment_sub(self, hostname):
+        self.lock.acquire()
+        try:
+            if hostname not in self.receive:
+                self.receive[hostname] = 1
+            else:
+                self.receive[hostname] += 1
+        finally:
+            self.lock.release()
 
-def _format_print_summary(table, topic):
-    """Print content in summary table."""
-    pub_count = table['pub']
-    send_count = table['send']
-    print('MULTIMACHINE COMMUNICATION SUMMARY')
-    print(f'Topic: {topic}, Published Msg Count: {pub_count}')
-    print('Subscribed from:')
-    _format_print_summary_helper(table['sub'])
-    print(f'Multicast Group/Port: {DEFAULT_GROUP}/{DEFAULT_PORT}, Sent Msg Count: {send_count}')
-    print('Received from:')
-    _format_print_summary_helper(table['receive'])
-    print('-'*60)
+    def increment_send(self):
+        self.lock.acquire()
+        try:
+            self.send += 1
+        finally:
+            self.lock.release()
+
+    def increment_receive(self, hostname):
+        self.lock.acquire()
+        try:
+            if hostname not in self.sub:
+                self.sub[hostname] = 1
+            else:
+                self.sub[hostname] += 1
+        finally:
+            self.lock.release()
+
+    def format_print_summary(self, topic, *, group=DEFAULT_GROUP, port=DEFAULT_PORT):
+        """Print content in summary table."""
+
+        def _format_print_summary_helper(table):
+            print('{:<15} {:<20} {:<10}'.format('', 'Hostname', 'Msg Count /2s'))
+            for name, count in table.items():
+                print('{:<15} {:<20} {:<10}'.format('', name, count))
+
+        print('MULTIMACHINE COMMUNICATION SUMMARY')
+        print(f'Topic: {topic}, Published Msg Count: {self.pub}')
+        print('Subscribed from:')
+        _format_print_summary_helper(self.sub)
+        print(
+            f'Multicast Group/Port: {DEFAULT_GROUP}/{DEFAULT_PORT}, '
+            f'Sent Msg Count: {self.send}')
+        print('Received from:')
+        _format_print_summary_helper(self.receive)
+        print('-'*60)
