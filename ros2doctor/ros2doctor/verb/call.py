@@ -84,14 +84,15 @@ class CallVerb(VerbExtension):
                     summary_table.reset()
                     prev_time = time.time()
                 # pub/sub threads
-                executor.spin_once()
-                executor.spin_once()
+                exec_thread = threading.Thread(target=executor.spin)
+                exec_thread.daemon=True
                 # multicast threads
                 send_thread = threading.Thread(target=_send, kwargs={'ttl': args.ttl})
                 send_thread.daemon = True
                 receive_thread = threading.Thread(target=_receive)
                 receive_thread.daemon = True
 
+                exec_thread.start()
                 receive_thread.start()
                 send_thread.start()
                 time.sleep(args.time_period)
