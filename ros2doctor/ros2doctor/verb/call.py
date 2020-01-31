@@ -79,12 +79,10 @@ class CallVerb(VerbExtension):
         try:
             prev_time = time.time()
             timeout = time.time() + args.duration
-            # print(f'Timeout: {timeout}\n')
             while time.time() < timeout:
-                # print(f'current time: {time.time()}\n')
                 if (time.time() - prev_time > float(1/args.rate)):
                     summary_table.format_print_summary(args.topic_name, args.rate)
-                    summary_table = SummaryTable()
+                    summary_table.reset()
                     prev_time = time.time()
                 # pub/sub threads
                 executor.spin_once()
@@ -92,8 +90,9 @@ class CallVerb(VerbExtension):
                 # multicast threads
                 send_thread = threading.Thread(target=_send, kwargs={'ttl':args.ttl})
                 send_thread.daemon = True
-                receive_thread = threading.Thread(target=_receive, args=())
+                receive_thread = threading.Thread(target=_receive)
                 receive_thread.daemon = True
+
                 receive_thread.start()
                 send_thread.start()
                 time.sleep(args.time_period)
@@ -192,7 +191,7 @@ class SummaryTable():
         self.send = 0
         self.receive = {}
     
-    def reset_table(self):
+    def reset(self):
         self.pub = 0
         self.send = 0
         self.sub = {}
