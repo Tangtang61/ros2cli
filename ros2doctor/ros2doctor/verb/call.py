@@ -41,13 +41,13 @@ class CallVerb(VerbExtension):
 
     def add_arguments(self, parser, cli_name):
         arg = parser.add_argument(
-            'topic_name', nargs='?', default='/canyouhearme',
+            'topic_name', default='/canyouhearme',
             help="Name of ROS topic to publish to (e.g. '/canyouhearme')")
         arg = parser.add_argument(
-            'time_period', nargs='?', default=0.1,
+            'time_period', default=0.1,
             help='time period to publish one message')
         arg = parser.add_argument(
-            'qos', nargs='?', default=10,
+            'qos', default=10,
             help="quality of service profile to publish message")
         parser.add_argument(
             '-r', '--rate', metavar='N', type=float, default=1.0,
