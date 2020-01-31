@@ -55,37 +55,37 @@ class CallVerb(VerbExtension):
             help="Name of ROS topic to publish to (e.g. '/canyouhearme')")
         arg = parser.add_argument(
             'time_period', nargs='?', default=0.1,
-            help='Time period to publish/send one message')
-        parser.add_argument(
-            'duration', nargs='?', default=20, type=positive_int,
-            help='How long this process runs (default: 20s)')
+            help='time period to publish one message')
+        arg = parser.add_argument(
+            'qos', nargs='?', default=10,
+            help="quality of service profile to publish message")
         parser.add_argument(
             '-r', '--rate', metavar='N', type=float, default=1.0,
             help='Rate in Hz to print summary table (default: 1.0)')
         parser.add_argument(
             '--ttl', type=positive_int,
             help='TTL for multicast send')
+        parser.add_argument(
+            '-1', '--once', action='store_true',
+            help='Emit one round of messages and exit')
 
 
     def main(self, *, args):
         global summary_table
-        summary_table = SummaryTable()
         rclpy.init()
+        pub_node = Talker(args.topic_name, args.time_period, args.qos)
+        sub_node = Listener(args.topic_name, args.qos)
+
         executor = MultiThreadedExecutor()
-        pub_node = Talker(args.topic_name, args.time_period)
-        sub_node = Listener(args.topic_name)
         executor.add_node(pub_node)
-        executor.add_node(sub_node)    
+        executor.add_node(sub_node)
+        summary_table = SummaryTable()
         try:
-            prev_time = time.time()
-            timeout = time.time() + args.duration
-            # print(f'Timeout: {timeout}\n')
-            while time.time() < timeout:
-                # print(f'current time: {time.time()}\n')
-                if (time.time() - prev_time > float(1/args.rate)):
-                    summary_table.format_print_summary(args.topic_name, args.rate)
+            count = 0
+            while True:
+                if (count % 20 == 0 and count != 0):
+                    summary_table.format_print_summary(args.topic_name)
                     summary_table = SummaryTable()
-                    prev_time = time.time()
                 # pub/sub threads
                 executor.spin_once()
                 executor.spin_once()
@@ -96,7 +96,8 @@ class CallVerb(VerbExtension):
                 receive_thread.daemon = True
                 receive_thread.start()
                 send_thread.start()
-                time.sleep(args.time_period)
+                count += 1
+                time.sleep(0.1)
         except KeyboardInterrupt:
             executor.shutdown()
             pub_node.destroy_node()
@@ -106,11 +107,11 @@ class CallVerb(VerbExtension):
 class Talker(Node):
     """Initialize talker node."""
 
-    def __init__(self, topic, time_period, *, qos=10):
+    def __init__(self, topic, period, qos):
         super().__init__('ros2doctor_talker')
         self.i = 0
         self.pub = self.create_publisher(String, topic, qos)
-        self.timer = self.create_timer(time_period, self.timer_callback)
+        self.timer = self.create_timer(period, self.timer_callback)
 
     def timer_callback(self):
         msg = String()
@@ -125,7 +126,7 @@ class Talker(Node):
 class Listener(Node):
     """Initialize listener node."""
 
-    def __init__(self, topic, *, qos=10):
+    def __init__(self, topic, qos):
         super().__init__('ros2doctor_listener')
         self.sub = self.create_subscription(
             String,
@@ -149,8 +150,8 @@ def _send(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, ttl=None):
         packed_ttl = struct.pack('b', ttl)
         s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, packed_ttl)
     try:
-        s.sendto(f"hello, it's me {hostname}".encode('utf-8'), (group, port))
         summary_table.increment_send()
+        s.sendto(f"hello, it's me {hostname}".encode('utf-8'), (group, port))
     finally:
         s.close()
 
@@ -232,12 +233,11 @@ class SummaryTable():
         finally:
             self.lock.release()
 
-    def format_print_summary(self, topic, rate, *, group=DEFAULT_GROUP, port=DEFAULT_PORT):
+    def format_print_summary(self, topic, *, group=DEFAULT_GROUP, port=DEFAULT_PORT):
         """Print content in summary table."""
 
         def _format_print_summary_helper(table):
-            msg_freq = 1/rate
-            print('{:<15} {:<20} {:<10}'.format('', 'Hostname', f'Msg Count /{msg_freq}s'))
+            print('{:<15} {:<20} {:<10}'.format('', 'Hostname', 'Msg Count /2s'))
             for name, count in table.items():
                 print('{:<15} {:<20} {:<10}'.format('', name, count))
 
