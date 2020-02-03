@@ -29,7 +29,7 @@ DEFAULT_GROUP = '225.0.0.1'
 DEFAULT_PORT = 49150
 
 
-def positive_int(string):
+def positive_int(string: str) -> int:
     try:
         value = int(string)
     except ValueError:
@@ -141,7 +141,7 @@ class Listener(Node):
 
 
 def _send(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, ttl=None):
-    """Multicast send."""
+    """Multicast send one message."""
     hostname = socket.gethostname()
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     if ttl is not None:
@@ -183,21 +183,25 @@ def _receive(*, group=DEFAULT_GROUP, port=DEFAULT_PORT, timeout=None):
 
 
 class SummaryTable():
+    """Summarize number of msgs published/sent and subscribed/received."""
 
     def __init__(self):
+        """Initialize empty summary table."""
         self.lock = threading.Lock()
         self.pub = 0
-        self.sub = {}
         self.send = 0
+        self.sub = {}
         self.receive = {}
 
     def reset(self):
+        """Reset summary table to empty each time after printing."""
         self.pub = 0
         self.send = 0
         self.sub = {}
         self.receive = {}
 
     def increment_pub(self):
+        """Increment published msg count."""
         self.lock.acquire()
         try:
             self.pub += 1
@@ -205,6 +209,7 @@ class SummaryTable():
             self.lock.release()
 
     def increment_sub(self, hostname):
+        """Increment subscribed msg count from different host(s)."""
         self.lock.acquire()
         try:
             if hostname not in self.receive:
@@ -215,6 +220,7 @@ class SummaryTable():
             self.lock.release()
 
     def increment_send(self):
+        """Increment multicast-sent msg count."""
         self.lock.acquire()
         try:
             self.send += 1
@@ -222,6 +228,7 @@ class SummaryTable():
             self.lock.release()
 
     def increment_receive(self, hostname):
+        """Increment multicast-received msg count from different host(s)."""
         self.lock.acquire()
         try:
             if hostname not in self.sub:
@@ -232,8 +239,7 @@ class SummaryTable():
             self.lock.release()
 
     def format_print_summary(self, topic, rate, *, group=DEFAULT_GROUP, port=DEFAULT_PORT):
-        """Print content in summary table."""
-
+        """Print content in a table format."""
         def _format_print_summary_helper(table):
             msg_freq = 1/rate
             print('{:<15} {:<20} {:<10}'.format('', 'Hostname', f'Msg Count /{msg_freq}s'))
