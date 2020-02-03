@@ -19,7 +19,7 @@ import threading
 import time
 
 import rclpy
-from rclpy.executors import MultiThreadedExecutor
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from ros2doctor.verb import VerbExtension
 
@@ -70,7 +70,7 @@ class CallVerb(VerbExtension):
         global summary_table
         summary_table = SummaryTable()
         rclpy.init()
-        executor = MultiThreadedExecutor()
+        executor = SingleThreadedExecutor()
         pub_node = Talker(args.topic_name, args.time_period)
         sub_node = Listener(args.topic_name)
         executor.add_node(pub_node)
@@ -78,26 +78,26 @@ class CallVerb(VerbExtension):
         try:
             prev_time = time.time()
             timeout = time.time() + args.duration
+            # pub/sub thread
+            exec_thread = threading.Thread(target=executor.spin)
+            exec_thread.start()
             while time.time() < timeout:
+                # print table at user determined rate
                 if (time.time() - prev_time > float(1/args.rate)):
                     summary_table.format_print_summary(args.topic_name, args.rate)
                     summary_table.reset()
                     prev_time = time.time()
-                # pub/sub threads
-                exec_thread = threading.Thread(target=executor.spin)
-                exec_thread.daemon=True
                 # multicast threads
                 send_thread = threading.Thread(target=_send, kwargs={'ttl': args.ttl})
                 send_thread.daemon = True
                 receive_thread = threading.Thread(target=_receive)
                 receive_thread.daemon = True
-
-                exec_thread.start()
                 receive_thread.start()
                 send_thread.start()
                 time.sleep(args.time_period)
         except KeyboardInterrupt:
             executor.shutdown()
+            rclpy.shutdown()
             pub_node.destroy_node()
             sub_node.destroy_node()
 
