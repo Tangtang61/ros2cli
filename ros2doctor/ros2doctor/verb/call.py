@@ -50,12 +50,12 @@ class CallVerb(VerbExtension):
     """
 
     def add_arguments(self, parser, cli_name):
-        arg = parser.add_argument(
+        parser.add_argument(
             'topic_name', nargs='?', default='/canyouhearme',
-            help="Name of ROS topic to publish to (e.g. '/canyouhearme')")
-        arg = parser.add_argument(
+            help="Name of ROS topic to publish to (default: '/canyouhearme')")
+        parser.add_argument(
             'time_period', nargs='?', default=0.1,
-            help='Time period to publish/send one message')
+            help='Time period to publish/send one message (default: 0.1s)')
         parser.add_argument(
             'duration', nargs='?', default=20, type=positive_int,
             help='How long this process runs (default: 20s)')
@@ -64,7 +64,7 @@ class CallVerb(VerbExtension):
             help='Rate in Hz to print summary table (default: 1.0)')
         parser.add_argument(
             '--ttl', type=positive_int,
-            help='TTL for multicast send')
+            help='TTL for multicast send (default: None)')
 
     def main(self, *, args):
         global summary_table
