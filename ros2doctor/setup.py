@@ -51,7 +51,7 @@ setup(
             'TopicReport = ros2doctor.api.topic:TopicReport',
             'PackageReport = ros2doctor.api.package:PackageReport',
         ],
-        'ros2doctor.verb':[
+        'ros2doctor.verb': [
             'call = ros2doctor.verb.call:CallVerb'
         ]
     }
