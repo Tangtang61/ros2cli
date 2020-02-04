@@ -96,6 +96,8 @@ class CallVerb(VerbExtension):
                 send_thread.start()
                 time.sleep(args.time_period)
         except KeyboardInterrupt:
+            pass
+        finally:
             executor.shutdown()
             rclpy.shutdown()
             pub_node.destroy_node()
